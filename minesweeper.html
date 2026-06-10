@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>經典踩地雷 Minesweeper</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #eef2f3;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        #status-panel {
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #555;
+        }
+
+        #board {
+            display: grid;
+            grid-template-columns: repeat(10, 40px);
+            grid-template-rows: repeat(10, 40px);
+            gap: 2px;
+            background-color: #bbb;
+            padding: 5px;
+            border-radius: 5px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        }
+
+        .cell {
+            width: 40px;
+            height: 40px;
+            background-color: #ddd;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.1rem;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.1s;
+        }
+
+        .cell:hover {
+            background-color: #ccc;
+        }
+
+        /* 已點開的格子 */
+        .cell.revealed {
+            background-color: #fff;
+            cursor: default;
+        }
+
+        /* 踩到地雷 */
+        .cell.mine {
+            background-color: #ff4d4d;
+            color: white;
+        }
+
+        /* 插旗子 */
+        .cell.flagged {
+            background-color: #ffeb3b;
+        }
+
+        /* 數字顏色 */
+        .count-1 { color: #0000ff; }
+        .count-2 { color: #008000; }
+        .count-3 { color: #ff0000; }
+        .count-4 { color: #000080; }
+        .count-5 { color: #800000; }
+        .count-6 { color: #008080; }
+        .count-7 { color: #000000; }
+        .count-8 { color: #808080; }
+
+        #reset-btn {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 1rem;
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        #reset-btn:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>經典踩地雷</h1>
+    <div id="status-panel">剩餘地雷：<span id="mine-count">10</span></div>
+    <div id="board"></div>
+    <button id="reset-btn" onclick="initGame()">重新開始</button>
+
+    <script>
+        const BOARD_SIZE = 10; // 10x10 的地圖
+        const MINE_COUNT = 10; // 總共 10 顆地雷
+
+        let board = [];
+        let gameOver = false;
+        let revealedCount = 0;
+        let flagsCount = 0;
+
+        const boardElement = document.getElementById('board');
+        const mineCountElement = document.getElementById('mine-count');
+
+        // 初始化遊戲
+        function initGame() {
+            board = [];
+            gameOver = false;
+            revealedCount = 0;
+            flagsCount = 0;
+            mineCountElement.innerText = MINE_COUNT;
+            boardElement.innerHTML = '';
+
+            // 1. 建立空地圖資料結構
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                let row = [];
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    row.push({
+                        r: r,
+                        c: c,
+                        isMine: false,
+                        isRevealed: false,
+                        isFlagged: false,
+                        neighborMines: 0
+                    });
+                }
+                board.push(row);
+            }
+
+            // 2. 隨機埋地雷
+            let minesPlaced = 0;
+            while (minesPlaced < MINE_COUNT) {
+                let r = Math.floor(Math.random() * BOARD_SIZE);
+                let c = Math.floor(Math.random() * BOARD_SIZE);
+                if (!board[r][c].isMine) {
+                    board[r][c].isMine = true;
+                    minesPlaced++;
+                }
+            }
+
+            // 3. 計算每格周圍的地雷數
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c].isMine) continue;
+                    board[r][c].neighborMines = countMinesAround(r, c);
+                }
+            }
+
+            // 4. 渲染前端畫面
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    const cellEl = document.createElement('div');
+                    cellEl.classList.add('cell');
+                    cellEl.dataset.row = r;
+                    cellEl.dataset.col = c;
+                    
+                    // 左鍵點擊事件
+                    cellEl.addEventListener('click', () => handleCellClick(r, c));
+                    // 右鍵插旗事件
+                    cellEl.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        handleCellRightClick(r, c);
+                    });
+
+                    boardElement.appendChild(cellEl);
+                }
+            }
+        }
+
+        // 計算九宮格內的地雷數量
+        function countMinesAround(r, c) {
+            let count = 0;
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
+                    let nr = r + i;
+                    let nc = c + j;
+                    if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE) {
+                        if (board[nr][nc].isMine) count++;
+                    }
+                }
+            }
+            return count;
+        }
+
+        // 取得對應座標的 DOM 元素
+        function getCellElement(r, c) {
+            return boardElement.children[r * BOARD_SIZE + c];
+        }
+
+        // 左鍵點擊處理
+        function handleCellClick(r, c) {
+            if (gameOver) return;
+            let cell = board[r][c];
+            if (cell.isRevealed || cell.isFlagged) return;
+
+            const cellEl = getCellElement(r, c);
+
+            // 踩到地雷，遊戲結束
+            if (cell.isMine) {
+                endGame(false);
+                return;
+            }
+
+            // 沒有地雷，翻開
+            revealCell(r, c);
+
+            // 檢查勝負
+            if (revealedCount === (BOARD_SIZE * BOARD_SIZE) - MINE_COUNT) {
+                endGame(true);
+            }
+        }
+
+        // 翻開格子的遞迴邏輯 (如果點到0，會自動擴散)
+        function revealCell(r, c) {
+            let cell = board[r][c];
+            if (cell.isRevealed || cell.isFlagged) return;
+
+            cell.isRevealed = true;
+            revealedCount++;
+            
+            const cellEl = getCellElement(r, c);
+            cellEl.classList.add('revealed');
+
+            if (cell.neighborMines > 0) {
+                cellEl.innerText = cell.neighborMines;
+                cellEl.classList.add(`count-${cell.neighborMines}`);
+            } else {
+                // 如果周圍沒有地雷，自動翻開鄰近的 8 格 (Flood Fill 演算法)
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        let nr = r + i;
+                        let nc = c + j;
+                        if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE) {
+                            revealCell(nr, nc);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 右鍵插旗處理
+        function handleCellRightClick(r, c) {
+            if (gameOver) return;
+            let cell = board[r][c];
+            if (cell.isRevealed) return;
+
+            const cellEl = getCellElement(r, c);
+
+            if (!cell.isFlagged) {
+                cell.isFlagged = true;
+                cellEl.classList.add('flagged');
+                cellEl.innerText = '🚩';
+                flagsCount++;
+            } else {
+                cell.isFlagged = false;
+                cellEl.classList.remove('flagged');
+                cellEl.innerText = '';
+                flagsCount--;
+            }
+            mineCountElement.innerText = MINE_COUNT - flagsCount;
+        }
+
+        // 遊戲結束處理
+        function endGame(isWin) {
+            gameOver = true;
+            
+            // 揭曉所有地雷位置
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c].isMine) {
+                        const cellEl = getCellElement(r, c);
+                        cellEl.classList.add('mine');
+                        cellEl.innerText = '💣';
+                    }
+                }
+            }
+
+            setTimeout(() => {
+                if (isWin) {
+                    alert('🎉 恭喜你！成功拆除所有地雷！');
+                } else {
+                    alert('💥 碰！你踩到地雷了，遊戲結束。');
+                }
+            }, 100);
+        }
+
+        // 初始化啟動
+        initGame();
+    </script>
+</body>
+</html>
